@@ -17,7 +17,7 @@ class UsageData:
 
 @dataclass
 class AppSettings:
-    poll_interval_seconds: int = 300
+    poll_interval_seconds: int = 60
     warning_threshold: float = 70.0
     critical_threshold: float = 90.0
     notifications_enabled: bool = True
