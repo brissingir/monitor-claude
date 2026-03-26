@@ -1,8 +1,11 @@
+import logging
 from datetime import datetime, timezone
 
 import requests
 
 from models import UsageData
+
+logger = logging.getLogger("monitor.api")
 
 
 class RateLimitError(Exception):
@@ -28,10 +31,13 @@ class UsageAPIClient:
         )
 
         if resp.status_code == 401:
+            logger.warning("API returned 401 — token invalid or expired")
             raise AuthError("Invalid or expired token")
         if resp.status_code == 429:
+            logger.warning("API returned 429 — rate limited")
             raise RateLimitError("Rate limited")
         resp.raise_for_status()
+        logger.debug("API response OK (%d bytes)", len(resp.content))
 
         data = resp.json()
         return self._parse(data)

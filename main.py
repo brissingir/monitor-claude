@@ -3,7 +3,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
-from app import SystemTrayApp
+from logging_config import setup_logging
 
 
 def main():
@@ -12,13 +12,18 @@ def main():
     if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
         sys.exit(0)
 
+    logger = setup_logging()
+    logger.info("Starting Claude Usage Monitor")
+
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("Claude Usage Monitor")
 
+    from app import SystemTrayApp
     tray_app = SystemTrayApp()
     tray_app.start()
 
+    logger.info("Application running")
     sys.exit(app.exec())
 
 

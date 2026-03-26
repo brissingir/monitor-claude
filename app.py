@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+import logging
+from datetime import datetime, timezone, timedelta
 
 from PySide6.QtCore import QSize
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QAction
@@ -6,11 +7,18 @@ from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
 
 from autostart import install, uninstall, is_installed
 from config import AppConfig
+from data_store import DataStore
+from hotkey import GlobalHotkey
 from models import AppSettings, UsageData
 from polling_service import PollingService
+from session_scanner import SessionScanner
 from ui.popup_window import MainPopupWindow
-from ui.settings_dialog import SettingsDialog
-from ui.styles import CRIMSON, ROYAL_BLUE, TEXT_PRIMARY, BG_SURFACE, WARNING_ORANGE, CRITICAL_RED
+from ui.styles import (
+    CRIMSON, ROYAL_BLUE, TEXT_PRIMARY, BG_SURFACE,
+    WARNING_ORANGE, CRITICAL_RED, ICON_GREEN,
+)
+
+logger = logging.getLogger("monitor.app")
 
 
 class SystemTrayApp:
@@ -20,6 +28,9 @@ class SystemTrayApp:
         self._last_data: UsageData | None = None
         self._last_notified_warning = False
         self._last_notified_critical = False
+
+        # Data store
+        self._data_store = DataStore(self._config.data_dir / "usage_history.db")
 
         # Tray icon
         self._tray = QSystemTrayIcon()
@@ -32,10 +43,6 @@ class SystemTrayApp:
         refresh_action = QAction("Refresh Now", menu)
         refresh_action.triggered.connect(self._on_refresh)
         menu.addAction(refresh_action)
-
-        settings_action = QAction("Settings...", menu)
-        settings_action.triggered.connect(self._open_settings)
-        menu.addAction(settings_action)
 
         self._autostart_action = QAction("Start with Windows", menu)
         self._autostart_action.setCheckable(True)
@@ -51,21 +58,47 @@ class SystemTrayApp:
 
         self._tray.setContextMenu(menu)
 
-        # Popup
+        # Popup (with inline settings — no separate dialog)
         self._popup = MainPopupWindow(
-            on_settings_clicked=self._open_settings,
+            on_settings_clicked=lambda: None,  # unused now
             on_refresh_clicked=self._on_refresh,
+            data_store=self._data_store,
+            settings=self._settings,
         )
+        self._popup.settings_changed.connect(self._on_settings_changed)
 
-        # Polling
-        self._polling = PollingService(self._settings.poll_interval_seconds * 1000)
+        # Polling (with data store for persistence)
+        self._polling = PollingService(
+            self._settings.poll_interval_seconds * 1000,
+            data_store=self._data_store,
+        )
         self._polling.usage_updated.connect(self._on_usage_updated)
         self._polling.error_occurred.connect(self._on_error)
         self._polling.auth_missing.connect(self._on_auth_missing)
 
+        # Session scanner (separate timer, default 5 min)
+        self._scanner = SessionScanner(
+            self._data_store,
+            scan_interval_ms=300_000,
+        )
+        self._scanner.scan_completed.connect(self._on_scan_completed)
+
+        # Global hotkey (Ctrl+Shift+C)
+        self._hotkey = GlobalHotkey()
+        self._hotkey.activated.connect(self._toggle_popup)
+
     def start(self):
         self._tray.show()
+        self._load_cached_data()
         self._polling.start()
+        self._scanner.start()
+        self._hotkey.start()
+
+    def _load_cached_data(self):
+        cached = self._data_store.get_latest_snapshot()
+        if cached:
+            logger.info("Loaded cached snapshot from %s", cached.fetched_at.isoformat())
+            self._on_usage_updated(cached, from_cache=True)
 
     def _on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
@@ -79,18 +112,23 @@ class SystemTrayApp:
             self._popup.show()
             self._popup.activateWindow()
 
-    def _on_usage_updated(self, data: UsageData):
+    def _on_usage_updated(self, data: UsageData, from_cache: bool = False):
         self._last_data = data
+        max_util = max(data.five_hour_utilization, data.seven_day_utilization)
         pct = f"{data.five_hour_utilization:.0f}"
-        self._tray.setIcon(self._make_icon(pct, data.five_hour_utilization))
+        self._tray.setIcon(self._make_icon(pct, max_util))
+        spark = self._make_sparkline()
         self._tray.setToolTip(
             f"Claude Usage\n"
             f"5h: {data.five_hour_utilization:.0f}%  |  7d: {data.seven_day_utilization:.0f}%"
+            + (f"\n{spark}" if spark else "")
         )
-        self._popup.update_usage(data)
-        self._check_notifications(data)
+        self._popup.update_usage(data, from_cache=from_cache)
+        if not from_cache:
+            self._check_notifications(data)
 
     def _on_error(self, message: str):
+        logger.warning("Error displayed: %s", message)
         self._tray.setToolTip(f"Claude Usage\n{message}")
         self._popup.set_error(message)
 
@@ -99,8 +137,19 @@ class SystemTrayApp:
         self._tray.setToolTip("Claude Usage\nNot logged in to Claude Code")
         self._popup.set_auth_missing()
 
+    def _on_scan_completed(self, updated: int):
+        if updated > 0:
+            logger.info("Session scan found %d updates", updated)
+            self._popup.refresh_sessions()
+
     def _on_refresh(self):
         self._polling.refresh_now()
+
+    def _on_settings_changed(self, new_settings: AppSettings):
+        logger.info("Settings updated via inline tab")
+        self._settings = new_settings
+        self._config.save(new_settings)
+        self._polling.set_interval(new_settings.poll_interval_seconds * 1000)
 
     def _toggle_autostart(self, checked: bool):
         if checked:
@@ -108,15 +157,6 @@ class SystemTrayApp:
         else:
             uninstall()
         self._autostart_action.setChecked(is_installed())
-
-    def _open_settings(self):
-        dialog = SettingsDialog(self._settings)
-        if dialog.exec():
-            new_settings = dialog.get_settings()
-            if new_settings:
-                self._settings = new_settings
-                self._config.save(new_settings)
-                self._polling.set_interval(new_settings.poll_interval_seconds * 1000)
 
     def _check_notifications(self, data: UsageData):
         if not self._settings.notifications_enabled:
@@ -148,6 +188,20 @@ class SystemTrayApp:
         elif max_util < self._settings.critical_threshold:
             self._last_notified_critical = False
 
+    def _make_sparkline(self, count: int = 12) -> str:
+        """Generate a Unicode sparkline from the last `count` snapshots."""
+        blocks = " ▁▂▃▄▅▆▇█"
+        since = datetime.now(timezone.utc) - timedelta(hours=count)
+        snapshots = self._data_store.get_snapshots_since(since)
+        if len(snapshots) < 2:
+            return ""
+        # Use the max utilization (5h or 7d) for each point
+        values = [max(s.five_hour_utilization, s.seven_day_utilization) for s in snapshots[-count:]]
+        max_val = max(values) if values else 1
+        if max_val == 0:
+            return "".join(blocks[0] for _ in values)
+        return "".join(blocks[min(8, int(v / max_val * 8))] for v in values)
+
     @staticmethod
     def _make_icon(text: str = "", utilization: float = 0) -> QIcon:
         size = 64
@@ -157,12 +211,20 @@ class SystemTrayApp:
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Background — rounded square with Crimson base
-        painter.setBrush(QColor(CRIMSON))
+        # Dynamic background color based on utilization
+        if utilization >= 90:
+            bg_color = CRITICAL_RED
+        elif utilization >= 70:
+            bg_color = WARNING_ORANGE
+        else:
+            bg_color = ICON_GREEN
+
+        # Background — rounded square
+        painter.setBrush(QColor(bg_color))
         painter.setPen(QColor(0, 0, 0, 0))
         painter.drawRoundedRect(2, 2, size - 4, size - 4, 14, 14)
 
-        # Royal Blue accent stripe on the right edge
+        # Accent stripe on the right edge
         painter.setBrush(QColor(ROYAL_BLUE))
         painter.drawRoundedRect(size - 14, 2, 12, size - 4, 6, 6)
 

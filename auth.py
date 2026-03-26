@@ -1,7 +1,10 @@
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+
+logger = logging.getLogger("monitor.auth")
 
 
 class CredentialReader:
@@ -50,6 +53,7 @@ class CredentialReader:
                 )
             else:
                 self._cached_expires_at = None
-        except (json.JSONDecodeError, OSError, KeyError):
+        except (json.JSONDecodeError, OSError, KeyError) as e:
+            logger.error("Failed to read credentials: %s", e)
             self._cached_token = None
             self._cached_expires_at = None
