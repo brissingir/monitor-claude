@@ -2,16 +2,19 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel
 
 from ui.styles import (
-    BG_SURFACE, BORDER_COLOR, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-    CRIMSON, ROYAL_BLUE,
+    BG_SURFACE, BORDER_DEFAULT, BORDER_ACCENT,
+    TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
+    CRIMSON, STATUS_ACTIVE,
 )
 
 
 class DataCard(QWidget):
-    def __init__(self, title: str, accent_color: str = TEXT_PRIMARY, parent=None):
+    def __init__(self, title: str, accent_color: str = TEXT_PRIMARY, highlight: bool = False, parent=None):
         super().__init__(parent)
+        border = BORDER_ACCENT if highlight else BORDER_DEFAULT
         self.setStyleSheet(
-            f"background: {BG_SURFACE}; border: 1px solid {BORDER_COLOR}; border-radius: 6px;"
+            f"QWidget {{ background: {BG_SURFACE}; border: 1px solid {border}; border-radius: 6px; }}"
+            f"QLabel {{ border: none; background: transparent; }}"
         )
 
         layout = QVBoxLayout(self)
@@ -19,22 +22,17 @@ class DataCard(QWidget):
         layout.setSpacing(2)
 
         self._title_label = QLabel(title)
-        self._title_label.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 10px; border: none; background: transparent;"
-        )
+        self._title_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
         layout.addWidget(self._title_label)
 
         self._value_label = QLabel("—")
         self._value_label.setStyleSheet(
-            f"color: {accent_color}; font-size: 18px; font-weight: bold; "
-            f"border: none; background: transparent;"
+            f"color: {accent_color}; font-size: 18px; font-weight: bold;"
         )
         layout.addWidget(self._value_label)
 
         self._sub_label = QLabel("")
-        self._sub_label.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 10px; border: none; background: transparent;"
-        )
+        self._sub_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
         self._sub_label.hide()
         layout.addWidget(self._sub_label)
 
@@ -54,8 +52,8 @@ class DataCardsRow(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        self.tokens_card = DataCard("Tokens Today", CRIMSON)
-        self.active_card = DataCard("Active", ROYAL_BLUE)
+        self.tokens_card = DataCard("Tokens Today", CRIMSON, highlight=True)
+        self.active_card = DataCard("Active", STATUS_ACTIVE)
         self.sessions_card = DataCard("This Week", TEXT_PRIMARY)
 
         layout.addWidget(self.tokens_card)

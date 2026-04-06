@@ -2,13 +2,13 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton
 
 from ui.styles import (
-    BG_SURFACE, BORDER_COLOR, CRIMSON,
+    BG_BASE, CRIMSON,
     TEXT_PRIMARY, TEXT_MUTED,
 )
 
 
 class TabBar(QWidget):
-    """Custom dark-themed tab bar with Crimson accent for active tab."""
+    """Tab bar with crimson underline indicator for active tab."""
 
     tab_changed = Signal(int)
 
@@ -19,16 +19,17 @@ class TabBar(QWidget):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setSpacing(0)
 
         for i, label in enumerate(labels):
             btn = QPushButton(label)
-            btn.setFixedHeight(28)
+            btn.setFixedHeight(32)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda _, idx=i: self.set_tab(idx))
             layout.addWidget(btn)
             self._buttons.append(btn)
 
+        layout.addStretch()
         self._update_styles()
 
     def set_tab(self, index: int):
@@ -46,13 +47,30 @@ class TabBar(QWidget):
         for i, btn in enumerate(self._buttons):
             if i == self._current:
                 btn.setStyleSheet(
-                    f"background: {CRIMSON}; color: {TEXT_PRIMARY}; "
-                    f"border: none; border-radius: 4px; "
-                    f"font-size: 12px; font-weight: bold; padding: 4px 12px;"
+                    f"QPushButton {{"
+                    f"  background: transparent;"
+                    f"  color: {TEXT_PRIMARY};"
+                    f"  border: none;"
+                    f"  border-bottom: 2px solid {CRIMSON};"
+                    f"  border-radius: 0px;"
+                    f"  font-size: 12px;"
+                    f"  font-weight: bold;"
+                    f"  padding: 4px 16px;"
+                    f"}}"
                 )
             else:
                 btn.setStyleSheet(
-                    f"background: {BG_SURFACE}; color: {TEXT_MUTED}; "
-                    f"border: 1px solid {BORDER_COLOR}; border-radius: 4px; "
-                    f"font-size: 12px; padding: 4px 12px;"
+                    f"QPushButton {{"
+                    f"  background: transparent;"
+                    f"  color: {TEXT_MUTED};"
+                    f"  border: none;"
+                    f"  border-bottom: 2px solid transparent;"
+                    f"  border-radius: 0px;"
+                    f"  font-size: 12px;"
+                    f"  padding: 4px 16px;"
+                    f"}}"
+                    f"QPushButton:hover {{"
+                    f"  color: {TEXT_PRIMARY};"
+                    f"  background: transparent;"
+                    f"}}"
                 )

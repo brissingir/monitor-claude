@@ -21,11 +21,16 @@ MOD_ALT = 0x0001
 
 # Virtual key codes
 VK_C = 0x43
+VK_M = 0x4D
 VK_U = 0x55
 
-# Hotkey combos to try in order
+# Hotkey combos to try in order.
+# Ctrl+Shift+C is tried first (works when Claude Code is not running),
+# then Ctrl+Shift+M (M for Monitor) which is free even when Claude Code is open.
 _HOTKEY_COMBOS = [
     (MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_C, "Ctrl+Shift+C"),
+    (MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_M, "Ctrl+Shift+M"),
+    (MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_M, "Ctrl+Alt+M"),
     (MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_U, "Ctrl+Shift+U"),
     (MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_U, "Ctrl+Alt+U"),
     (MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_C, "Ctrl+Alt+C"),
@@ -35,15 +40,17 @@ user32 = ctypes.windll.user32
 
 
 class GlobalHotkey(QObject):
-    """Registers Ctrl+Shift+C as a global hotkey. Emits activated() when pressed."""
+    """Registers a global hotkey (best available combo). Emits activated() when pressed."""
 
     activated = Signal()
+    registered = Signal(str)  # emits the combo name that was successfully registered
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._thread: threading.Thread | None = None
         self._running = False
         self._registered = False
+        self.combo_name: str = ""  # set after successful registration
 
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -74,6 +81,8 @@ class GlobalHotkey(QObject):
             return
 
         self._registered = True
+        self.combo_name = registered_name
+        self.registered.emit(registered_name)
         logger.info("Global hotkey %s registered", registered_name)
 
         msg = ctypes.wintypes.MSG()

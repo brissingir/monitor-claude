@@ -9,9 +9,9 @@ from PySide6.QtWidgets import (
 from cost_estimator import format_cost
 from models import SessionData
 from ui.styles import (
-    BG_BLACK, BG_SURFACE, BG_HOVER, BORDER_COLOR,
-    CRIMSON, ROYAL_BLUE, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-    ICON_GREEN,
+    BG_BASE, BG_SURFACE, BG_ELEVATED, BORDER_DEFAULT,
+    CRIMSON, EMBER, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
+    STATUS_ACTIVE,
 )
 
 
@@ -20,11 +20,10 @@ class SessionRow(QWidget):
         super().__init__(parent)
         self._session = session
         self._expanded = False
+        self._is_active = is_active
 
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setStyleSheet(
-            f"background: {BG_SURFACE}; border: 1px solid {BORDER_COLOR}; border-radius: 4px;"
-        )
+        self._apply_style(expanded=False)
 
         self._main_layout = QVBoxLayout(self)
         self._main_layout.setContentsMargins(10, 6, 10, 6)
@@ -34,16 +33,14 @@ class SessionRow(QWidget):
         header = QHBoxLayout()
         header.setSpacing(6)
 
-        # Active indicator
         if is_active:
             dot = QLabel("\u25CF")
             dot.setStyleSheet(
-                f"color: {ICON_GREEN}; font-size: 10px; border: none; background: transparent;"
+                f"color: {STATUS_ACTIVE}; font-size: 10px; border: none; background: transparent;"
             )
             dot.setFixedWidth(14)
             header.addWidget(dot)
 
-        # Title
         title_text = session.ai_title or session.slug or "Untitled session"
         if len(title_text) > 40:
             title_text = title_text[:37] + "..."
@@ -54,11 +51,9 @@ class SessionRow(QWidget):
         )
         header.addWidget(title, stretch=1)
 
-        # Tokens
-        total = session.total_tokens
-        tokens_text = self._format_tokens(total)
-        tokens_lbl = QLabel(tokens_text)
+        tokens_text = self._format_tokens(session.total_tokens)
         model_color = self._get_model_color(session)
+        tokens_lbl = QLabel(tokens_text)
         tokens_lbl.setStyleSheet(
             f"color: {model_color}; font-size: 11px; font-weight: bold; "
             f"border: none; background: transparent;"
@@ -71,7 +66,6 @@ class SessionRow(QWidget):
         sub = QHBoxLayout()
         sub.setSpacing(4)
 
-        # Project
         project = session.project_path.replace("\\", "/").split("/")[-1] if session.project_path else ""
         if project:
             proj_lbl = QLabel(project)
@@ -79,9 +73,8 @@ class SessionRow(QWidget):
                 f"color: {TEXT_MUTED}; font-size: 10px; border: none; background: transparent;"
             )
             sub.addWidget(proj_lbl)
-            sub.addWidget(self._separator())
+            sub.addWidget(self._dot_separator())
 
-        # Duration
         dur = session.duration_seconds
         if dur is not None:
             dur_text = f"{dur // 3600}h {(dur % 3600) // 60}m" if dur >= 3600 else f"{dur // 60}m"
@@ -90,9 +83,8 @@ class SessionRow(QWidget):
                 f"color: {TEXT_MUTED}; font-size: 10px; border: none; background: transparent;"
             )
             sub.addWidget(dur_lbl)
-            sub.addWidget(self._separator())
+            sub.addWidget(self._dot_separator())
 
-        # Messages
         msg_lbl = QLabel(f"{session.user_message_count} msgs")
         msg_lbl.setStyleSheet(
             f"color: {TEXT_MUTED}; font-size: 10px; border: none; background: transparent;"
@@ -100,10 +92,8 @@ class SessionRow(QWidget):
         sub.addWidget(msg_lbl)
         sub.addStretch()
 
-        # Time
         if session.started_at:
-            time_text = self._format_relative_time(session.started_at)
-            time_lbl = QLabel(time_text)
+            time_lbl = QLabel(self._format_relative_time(session.started_at))
             time_lbl.setStyleSheet(
                 f"color: {TEXT_MUTED}; font-size: 10px; border: none; background: transparent;"
             )
@@ -118,16 +108,13 @@ class SessionRow(QWidget):
         detail_layout.setContentsMargins(0, 4, 0, 0)
         detail_layout.setSpacing(2)
 
-        # Separator
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"color: {BORDER_COLOR}; max-height: 1px; border: none;")
+        sep.setStyleSheet(f"color: {BORDER_DEFAULT}; max-height: 1px; border: none;")
         detail_layout.addWidget(sep)
 
-        # Model breakdown
         for usage in session.token_usage:
             model_name = usage.model.replace("claude-", "").replace("-", " ").title()
-            cost = format_cost(session.total_cost) if session.token_usage else "$0"
             row = QHBoxLayout()
             m_lbl = QLabel(f"  {model_name}")
             m_lbl.setStyleSheet(
@@ -147,7 +134,6 @@ class SessionRow(QWidget):
             row.addWidget(d_lbl)
             detail_layout.addLayout(row)
 
-        # Cost + entrypoint + branch
         info_row = QHBoxLayout()
         cost_val = format_cost(session.total_cost)
         info_parts = [f"Cost: ~{cost_val}"]
@@ -168,12 +154,16 @@ class SessionRow(QWidget):
     def mousePressEvent(self, event):
         self._expanded = not self._expanded
         self._detail_widget.setVisible(self._expanded)
+        self._apply_style(expanded=self._expanded)
+
+    def _apply_style(self, expanded: bool):
+        bg = BG_ELEVATED if expanded else BG_SURFACE
         self.setStyleSheet(
-            f"background: {BG_HOVER if self._expanded else BG_SURFACE}; "
-            f"border: 1px solid {BORDER_COLOR}; border-radius: 4px;"
+            f"QWidget {{ background: {bg}; border: 1px solid {BORDER_DEFAULT}; border-radius: 4px; }}"
+            f"QLabel {{ border: none; background: transparent; }}"
         )
 
-    def _separator(self) -> QLabel:
+    def _dot_separator(self) -> QLabel:
         lbl = QLabel("\u00B7")
         lbl.setStyleSheet(
             f"color: {TEXT_MUTED}; font-size: 10px; border: none; background: transparent;"
@@ -187,7 +177,7 @@ class SessionRow(QWidget):
             if "opus" in u.model:
                 return CRIMSON
             if "sonnet" in u.model:
-                return ROYAL_BLUE
+                return EMBER
         return TEXT_SECONDARY
 
     @staticmethod
@@ -209,8 +199,7 @@ class SessionRow(QWidget):
             return f"{secs // 60}m ago"
         if secs < 86400:
             return f"{secs // 3600}h ago"
-        days = secs // 86400
-        return f"{days}d ago"
+        return f"{secs // 86400}d ago"
 
 
 class SessionListWidget(QWidget):
@@ -220,18 +209,11 @@ class SessionListWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Scroll area
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self._scroll.setStyleSheet(
-            f"QScrollArea {{ background: {BG_BLACK}; border: none; }}"
-            f"QScrollBar:vertical {{ background: {BG_BLACK}; width: 6px; }}"
-            f"QScrollBar::handle:vertical {{ background: {BORDER_COLOR}; border-radius: 3px; min-height: 20px; }}"
-            f"QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}"
-        )
-        self._scroll.setFixedHeight(200)
+        self._scroll.setFixedHeight(250)
 
         self._container = QWidget()
         self._list_layout = QVBoxLayout(self._container)
@@ -243,8 +225,7 @@ class SessionListWidget(QWidget):
         layout.addWidget(self._scroll)
 
     def update_sessions(self, sessions: list[SessionData], active_ids: set[str]):
-        # Clear existing rows
-        while self._list_layout.count() > 1:  # keep the stretch
+        while self._list_layout.count() > 1:
             item = self._list_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()

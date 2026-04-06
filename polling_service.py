@@ -97,7 +97,7 @@ class PollingService(QObject):
         worker.error.connect(self._on_poll_error)
         worker.finished.connect(thread.quit)
         worker.error.connect(thread.quit)
-        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_thread_finished)
 
         # prevent GC
         self._worker_thread = thread
@@ -140,8 +140,13 @@ class PollingService(QObject):
             self._timer.setInterval(self._network_backoff)
             self._network_backoff = min(self._network_backoff * 2, 600_000)
 
+    def _on_thread_finished(self):
+        self._worker_thread = None
+        self._worker = None
+
     def _cleanup_thread(self):
         if self._worker_thread and self._worker_thread.isRunning():
             self._worker_thread.quit()
             self._worker_thread.wait(3000)
         self._worker_thread = None
+        self._worker = None
